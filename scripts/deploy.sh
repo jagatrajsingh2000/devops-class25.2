@@ -32,6 +32,13 @@ if [ ! -f "package.json" ]; then
     exit 1
 fi
 
+# Install Node.js if not already installed
+if ! command -v node &> /dev/null; then
+    print_status "Installing Node.js..."
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+fi
+
 # Install pnpm if not already installed
 if ! command -v pnpm &> /dev/null; then
     print_status "Installing pnpm..."
