@@ -1,0 +1,250 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '10.16.1'
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: ${{ env.PNPM_VERSION }}
+
+    - name: Get pnpm store directory
+      shell: bash
+      run: |
+        echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+    - name: Setup pnpm cache
+      uses: actions/cache@v3
+      with:
+        path: ${{ env.STORE_PATH }}
+        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-pnpm-store-
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+
+    - name: Generate Prisma client
+      run: cd packages/prisma && pnpm prisma generate
+
+    - name: Lint code
+      run: pnpm run lint
+
+    - name: Type check
+      run: pnpm run check-types
+
+    - name: Build packages
+      run: pnpm run build
+
+  deploy:
+    name: Deploy to VM
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: ${{ env.PNPM_VERSION }}
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+
+    - name: Generate Prisma client
+      run: cd packages/prisma && pnpm prisma generate
+
+    - name: Build application
+      run: pnpm run build
+
+    - name: Create deployment package
+      run: |
+        # Create a temporary directory for deployment
+        mkdir -p deployment-temp
+        
+        # Copy only the necessary files
+        cp -r apps deployment-temp/
+        cp -r packages deployment-temp/
+        cp -r scripts deployment-temp/
+        cp package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json deployment-temp/
+        cp engineex.conf deployment-temp/ 2>/dev/null || true
+        
+        # Create the archive from the temp directory
+        cd deployment-temp
+        tar -czf ../deployment.tar.gz .
+        cd ..
+        
+        # Clean up temp directory
+        rm -rf deployment-temp
+
+    - name: Test VM Connection
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USERNAME }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        port: ${{ secrets.VM_PORT }}
+        timeout: 60s
+        command_timeout: 30s
+        script: |
+          echo "Testing VM connection..."
+          whoami
+          pwd
+          echo "Connection test successful!"
+
+    - name: Deploy to VM
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USERNAME }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        port: ${{ secrets.VM_PORT }}
+        timeout: 600s
+        command_timeout: 300s
+        debug: true
+        script: |
+          # Test connection first
+          echo "Testing SSH connection..."
+          whoami
+          pwd
+          
+          # Create new deployment directory
+          mkdir -p /home/ubuntu/devops-class25.2
+          echo "Directory created successfully"
+
+    - name: Copy files to VM
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USERNAME }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        port: ${{ secrets.VM_PORT }}
+        timeout: 600s
+        source: "deployment.tar.gz"
+        target: "/home/ubuntu/devops-class25.2/"
+
+    - name: Extract and setup on VM
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USERNAME }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        port: ${{ secrets.VM_PORT }}
+        script: |
+          cd /home/ubuntu/devops-class25.2
+          
+          # Extract deployment package
+          tar -xzf deployment.tar.gz
+          rm deployment.tar.gz
+          
+          # Install Node.js if not already installed
+          if ! command -v node &> /dev/null; then
+            echo "Installing Node.js..."
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+          fi
+          
+          # Install pnpm if not already installed
+          if ! command -v pnpm &> /dev/null; then
+            echo "Installing pnpm..."
+            sudo npm install -g pnpm@10.16.1
+          fi
+          
+          # Install dependencies with memory optimization and retry
+          echo "Installing dependencies with memory optimization..."
+          export NODE_OPTIONS="--max-old-space-size=1024"
+          
+          # Try installation with retry mechanism
+          for i in {1..3}; do
+            echo "Installation attempt $i/3..."
+            if pnpm install --frozen-lockfile --prefer-offline --reporter=append-only; then
+              echo "Installation successful!"
+              break
+            else
+              echo "Installation failed, attempt $i/3"
+              if [ $i -lt 3 ]; then
+                echo "Retrying in 10 seconds..."
+                sleep 10
+              else
+                echo "All installation attempts failed"
+                exit 1
+              fi
+            fi
+          done
+          
+          # Generate Prisma client
+          cd packages/prisma
+          # Ensure Prisma is properly installed
+          if [ ! -f "node_modules/prisma/build/index.js" ]; then
+            echo "Prisma binary not found, reinstalling..."
+            pnpm install prisma --save-dev
+          fi
+          pnpm prisma generate
+          cd ../..
+          
+          # Run database migrations
+          cd packages/prisma
+          pnpm prisma db push
+          cd ../..
+          
+          # Build application
+          pnpm run build
+          
+          # Stop existing services
+          sudo pkill -f "node.*3000" || true
+          sudo pkill -f "node.*3002" || true
+          sudo pkill -f "node.*8080" || true
+          
+          # Start services with PM2
+          sudo npm install -g pm2
+          pm2 delete all || true
+          
+          # Start HTTP server
+          pm2 start apps/http-server/dist/index.js --name "http-server" -- --port 3002
+          
+          # Start WebSocket server
+          pm2 start apps/ws-server/dist/index.js --name "ws-server" -- --port 8080
+          
+          # Start Web server
+          pm2 start "cd apps/web && npm start" --name "web-server"
+          
+          # Save PM2 configuration
+          pm2 save
+          pm2 startup
+          
+          # Update nginx configuration
+          sudo cp engineex.conf /etc/nginx/sites-available/devops-class25.2
+          sudo ln -sf /etc/nginx/sites-available/devops-class25.2 /etc/nginx/sites-enabled/
+          sudo nginx -t && sudo systemctl reload nginx
+          
+          echo "Deployment completed successfully!"
+
