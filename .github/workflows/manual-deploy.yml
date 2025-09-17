@@ -11,120 +11,113 @@ on:
         options:
         - production
         - staging
-      action:
-        description: 'Deployment action'
-        required: true
-        default: 'deploy'
-        type: choice
-        options:
-        - deploy
-
-env:
-  NODE_VERSION: '20'
-  PNPM_VERSION: '10.16.1'
 
 jobs:
-  manual-deploy:
-    name: Manual Deploy
+  deploy:
     runs-on: ubuntu-latest
-    
+    name: Manual Deploy to VM
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-    - name: Setup pnpm
-      uses: pnpm/action-setup@v2
-      with:
-        version: ${{ env.PNPM_VERSION }}
+      - name: Install pnpm
+        run: |
+          npm install -g pnpm@10.16.1
 
-    - name: Install dependencies
-      run: pnpm install --frozen-lockfile
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile
 
-    - name: Generate Prisma client
-      run: cd packages/prisma && pnpm prisma generate
+      - name: Generate Prisma client
+        run: |
+          cd packages/prisma
+          pnpm prisma generate
 
-    - name: Build application
-      run: pnpm run build
+      - name: Build application
+        run: |
+          pnpm run build
 
-    - name: Create deployment package
-      run: |
-        # Create a temporary directory for deployment
-        mkdir -p deployment-temp
-        
-        # Copy only the necessary files
-        cp -r apps deployment-temp/
-        cp -r packages deployment-temp/
-        cp -r scripts deployment-temp/
-        cp package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json deployment-temp/
-        cp engineex.conf deployment-temp/ 2>/dev/null || true
-        
-        # Create the archive from the temp directory
-        cd deployment-temp
-        tar -czf ../deployment.tar.gz .
-        cd ..
-        
-        # Clean up temp directory
-        rm -rf deployment-temp
-
-    - name: Deploy to VM
-      if: ${{ inputs.action == 'deploy' }}
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.VM_HOST }}
-        username: ${{ secrets.VM_USERNAME }}
-        key: ${{ secrets.VM_SSH_KEY }}
-        port: ${{ secrets.VM_PORT }}
-        timeout: 600s
-        command_timeout: 300s
-        script: |
-          # Create new deployment directory
-          mkdir -p /home/ubuntu/devops-class25.2
-
-    - name: Copy files to VM
-      if: ${{ inputs.action == 'deploy' }}
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: ${{ secrets.VM_HOST }}
-        username: ${{ secrets.VM_USERNAME }}
-        key: ${{ secrets.VM_SSH_KEY }}
-        port: ${{ secrets.VM_PORT }}
-        source: "deployment.tar.gz"
-        target: "/home/ubuntu/devops-class25.2/"
-
-    - name: Execute deployment
-      if: ${{ inputs.action == 'deploy' }}
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.VM_HOST }}
-        username: ${{ secrets.VM_USERNAME }}
-        key: ${{ secrets.VM_SSH_KEY }}
-        port: ${{ secrets.VM_PORT }}
-        script: |
-          cd /home/ubuntu/devops-class25.2
+      - name: Deploy to VM
+        run: |
+          echo "${{ secrets.VM_SSH_KEY }}" > ~/ssh_key
+          chmod 600 ~/ssh_key
           
-          # Extract deployment package
-          tar -xzf deployment.tar.gz
-          rm deployment.tar.gz
-          
-          # Install Node.js if not already installed
-          if ! command -v node &> /dev/null; then
-            echo "Installing Node.js..."
-            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-            sudo apt-get install -y nodejs
-          fi
-          
-          # Install pnpm if not already installed
-          if ! command -v pnpm &> /dev/null; then
-            echo "Installing pnpm..."
-            sudo npm install -g pnpm@10.16.1
-          fi
-          
-          # Run deployment script
-          chmod +x scripts/deploy.sh
-          ./scripts/deploy.sh
-
+          # Deploy using direct SSH command
+          ssh -i ~/ssh_key -o StrictHostKeyChecking=no ${{ secrets.VM_USERNAME }}@${{ secrets.VM_HOST }} -p ${{ secrets.VM_PORT }} "
+            echo '🚀 Starting manual deployment to ${{ inputs.environment }}...'
+            
+            # Navigate to project directory
+            cd /home/ubuntu/devops-class25.2 || (mkdir -p /home/ubuntu/devops-class25.2 && cd /home/ubuntu/devops-class25.2)
+            
+            # Pull latest code
+            git pull origin main || echo 'Git pull failed, continuing with existing code'
+            
+            # Install Node.js if not already installed
+            if ! command -v node &> /dev/null; then
+              echo 'Installing Node.js...'
+              curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+              sudo apt-get install -y nodejs
+            fi
+            
+            # Install pnpm if not already installed
+            if ! command -v pnpm &> /dev/null; then
+              echo 'Installing pnpm...'
+              sudo npm install -g pnpm@10.16.1
+            fi
+            
+            # Set memory limit and install dependencies
+            export NODE_OPTIONS='--max-old-space-size=1024'
+            echo 'Installing dependencies...'
+            pnpm install --frozen-lockfile --prefer-offline --reporter=append-only
+            
+            # Generate Prisma client
+            echo 'Generating Prisma client...'
+            cd packages/prisma
+            pnpm prisma generate
+            cd ../..
+            
+            # Run database migrations
+            echo 'Running database migrations...'
+            cd packages/prisma
+            pnpm prisma db push
+            cd ../..
+            
+            # Build application
+            echo 'Building application...'
+            pnpm run build
+            
+            # Install PM2 if not already installed
+            if ! command -v pm2 &> /dev/null; then
+              echo 'Installing PM2...'
+              sudo npm install -g pm2
+            fi
+            
+            # Stop existing services
+            echo 'Stopping existing services...'
+            pm2 delete all 2>/dev/null || true
+            
+            # Start services
+            echo 'Starting services...'
+            pm2 start apps/http-server/dist/index.js --name 'http-server' -- --port 3002
+            pm2 start apps/ws-server/dist/index.js --name 'ws-server' -- --port 8080
+            pm2 start 'cd apps/web && npm start' --name 'web-server'
+            
+            # Save PM2 configuration
+            pm2 save
+            
+            # Update nginx configuration
+            if [ -f 'engineex.conf' ]; then
+              echo 'Updating Nginx configuration...'
+              sudo cp engineex.conf /etc/nginx/sites-available/devops-class25.2
+              sudo ln -sf /etc/nginx/sites-available/devops-class25.2 /etc/nginx/sites-enabled/
+              sudo nginx -t && sudo systemctl reload nginx
+            fi
+            
+            echo '✅ Manual deployment to ${{ inputs.environment }} completed successfully!'
+            pm2 status
+          "
