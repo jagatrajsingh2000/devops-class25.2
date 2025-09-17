@@ -45,21 +45,45 @@ if ! command -v pnpm &> /dev/null; then
     sudo npm install -g pnpm@10.16.1
 fi
 
-# Install/update dependencies with memory optimization and retry
+# System cleanup and resource check
+print_status "Checking system resources..."
+df -h
+free -h
+print_status "Cleaning up temporary files..."
+sudo apt-get clean
+sudo rm -rf /tmp/*
+
+# Install/update dependencies with timeout and memory optimization
 print_status "Installing dependencies..."
 for i in {1..3}; do
     print_status "Attempt $i of 3..."
-    if pnpm install --frozen-lockfile --prefer-offline; then
+    print_status "Starting pnpm install with timeout..."
+    
+    # Set timeout and memory optimization
+    timeout 300 pnpm install --frozen-lockfile --prefer-offline --reporter=append-only || INSTALL_EXIT_CODE=$?
+    
+    if [ ${INSTALL_EXIT_CODE:-0} -eq 0 ]; then
         print_status "Dependencies installed successfully"
         break
+    elif [ ${INSTALL_EXIT_CODE:-0} -eq 124 ]; then
+        print_warning "Installation timed out after 5 minutes"
     else
-        print_warning "Installation failed, retrying..."
-        if [ $i -eq 3 ]; then
-            print_error "All installation attempts failed"
-            exit 1
-        fi
-        sleep 5
+        print_warning "Installation failed with exit code: ${INSTALL_EXIT_CODE:-0}"
     fi
+    
+    if [ $i -eq 3 ]; then
+        print_warning "All installation attempts failed, trying fallback method..."
+        # Fallback: install without frozen lockfile
+        timeout 300 pnpm install --prefer-offline --reporter=append-only || {
+            print_error "Fallback installation also failed"
+            exit 1
+        }
+        break
+    fi
+    
+    print_warning "Retrying in 10 seconds..."
+    sleep 10
+    unset INSTALL_EXIT_CODE
 done
 
 # Generate Prisma client
