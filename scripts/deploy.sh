@@ -45,13 +45,33 @@ if ! command -v pnpm &> /dev/null; then
     sudo npm install -g pnpm@10.16.1
 fi
 
-# Install/update dependencies
+# Install/update dependencies with memory optimization and retry
 print_status "Installing dependencies..."
-pnpm install --frozen-lockfile
+for i in {1..3}; do
+    print_status "Attempt $i of 3..."
+    if pnpm install --frozen-lockfile --prefer-offline --no-audit --no-fund; then
+        print_status "Dependencies installed successfully"
+        break
+    else
+        print_warning "Installation failed, retrying..."
+        if [ $i -eq 3 ]; then
+            print_error "All installation attempts failed"
+            exit 1
+        fi
+        sleep 5
+    fi
+done
 
 # Generate Prisma client
 print_status "Generating Prisma client..."
 cd packages/prisma
+
+# Ensure Prisma is properly installed
+if [ ! -f "node_modules/prisma/build/index.js" ]; then
+    print_warning "Prisma binary not found, reinstalling..."
+    pnpm install prisma --save-dev
+fi
+
 pnpm prisma generate
 cd ../..
 

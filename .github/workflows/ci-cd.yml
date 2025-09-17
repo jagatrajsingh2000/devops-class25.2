@@ -160,11 +160,30 @@ jobs:
             sudo npm install -g pnpm@10.16.1
           fi
           
-          # Install dependencies
-          pnpm install --frozen-lockfile
+          # Install dependencies with memory optimization and retry
+          echo "Installing dependencies..."
+          for i in {1..3}; do
+            echo "Attempt $i of 3..."
+            if pnpm install --frozen-lockfile --prefer-offline --no-audit --no-fund; then
+              echo "Dependencies installed successfully"
+              break
+            else
+              echo "Installation failed, retrying..."
+              if [ $i -eq 3 ]; then
+                echo "All installation attempts failed"
+                exit 1
+              fi
+              sleep 5
+            fi
+          done
           
           # Generate Prisma client
           cd packages/prisma
+          # Ensure Prisma is properly installed
+          if [ ! -f "node_modules/prisma/build/index.js" ]; then
+            echo "Prisma binary not found, reinstalling..."
+            pnpm install prisma --save-dev
+          fi
           pnpm prisma generate
           cd ../..
           
