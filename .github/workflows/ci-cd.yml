@@ -88,17 +88,23 @@ jobs:
 
     - name: Create deployment package
       run: |
-        tar -czf deployment.tar.gz \
-          --exclude='.git' \
-          --exclude='node_modules' \
-          --exclude='.next' \
-          --exclude='dist' \
-          --exclude='.turbo' \
-          --exclude='*.log' \
-          --exclude='deployment.tar.gz' \
-          --exclude='.github' \
-          --exclude='*.tsbuildinfo' \
-          .
+        # Create a temporary directory for deployment
+        mkdir -p deployment-temp
+        
+        # Copy only the necessary files
+        cp -r apps deployment-temp/
+        cp -r packages deployment-temp/
+        cp -r scripts deployment-temp/
+        cp package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json deployment-temp/
+        cp engineex.conf deployment-temp/ 2>/dev/null || true
+        
+        # Create the archive from the temp directory
+        cd deployment-temp
+        tar -czf ../deployment.tar.gz .
+        cd ..
+        
+        # Clean up temp directory
+        rm -rf deployment-temp
 
     - name: Deploy to VM
       uses: appleboy/ssh-action@v1.0.3
