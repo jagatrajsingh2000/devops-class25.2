@@ -126,7 +126,7 @@ jobs:
           # Install pnpm if not already installed
           if ! command -v pnpm &> /dev/null; then
             echo "Installing pnpm..."
-            npm install -g pnpm@10.16.1
+            sudo npm install -g pnpm@10.16.1
           fi
           
           # Run deployment script

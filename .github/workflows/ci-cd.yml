@@ -157,7 +157,7 @@ jobs:
           # Install pnpm if not already installed
           if ! command -v pnpm &> /dev/null; then
             echo "Installing pnpm..."
-            npm install -g pnpm@10.16.1
+            sudo npm install -g pnpm@10.16.1
           fi
           
           # Install dependencies
@@ -182,7 +182,7 @@ jobs:
           sudo pkill -f "node.*8080" || true
           
           # Start services with PM2
-          npm install -g pm2
+          sudo npm install -g pm2
           pm2 delete all || true
           
           # Start HTTP server

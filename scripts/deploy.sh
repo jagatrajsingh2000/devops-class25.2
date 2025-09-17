@@ -42,7 +42,7 @@ fi
 # Install pnpm if not already installed
 if ! command -v pnpm &> /dev/null; then
     print_status "Installing pnpm..."
-    npm install -g pnpm@10.16.1
+    sudo npm install -g pnpm@10.16.1
 fi
 
 # Install/update dependencies
