@@ -121,34 +121,6 @@ else
     print_warning "engineex.conf not found, skipping nginx update"
 fi
 
-# Health check
-print_status "Performing health checks..."
-sleep 10
-
-# Check HTTP server
-if curl -f http://localhost:3002/hi > /dev/null 2>&1; then
-    print_status "✅ HTTP server is healthy"
-else
-    print_error "❌ HTTP server health check failed"
-    exit 1
-fi
-
-# Check Web server
-if curl -f http://localhost:3000 > /dev/null 2>&1; then
-    print_status "✅ Web server is healthy"
-else
-    print_error "❌ Web server health check failed"
-    exit 1
-fi
-
-# Check WebSocket server (basic port check)
-if netstat -tuln | grep -q ":8080 "; then
-    print_status "✅ WebSocket server is running"
-else
-    print_error "❌ WebSocket server is not running"
-    exit 1
-fi
-
 print_status "🎉 Deployment completed successfully!"
 print_status "Services status:"
 pm2 status

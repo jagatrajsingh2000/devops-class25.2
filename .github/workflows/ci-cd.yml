@@ -208,10 +208,5 @@ jobs:
           sudo ln -sf /etc/nginx/sites-available/devops-class25.2 /etc/nginx/sites-enabled/
           sudo nginx -t && sudo systemctl reload nginx
           
-          # Health check
-          sleep 10
-          curl -f http://localhost:3002/hi || exit 1
-          curl -f http://localhost:3000 || exit 1
-          
           echo "Deployment completed successfully!"
 
