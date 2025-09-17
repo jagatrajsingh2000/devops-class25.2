@@ -121,7 +121,6 @@ jobs:
           
           # Create new deployment directory
           mkdir -p /home/ubuntu/devops-class25.2
-          cd /home/ubuntu/devops-class25.2
 
     - name: Copy files to VM
       uses: appleboy/scp-action@v0.1.7
@@ -160,46 +159,9 @@ jobs:
             sudo npm install -g pnpm@10.16.1
           fi
           
-          # System cleanup and resource check
-          echo "System status before installation:"
-          df -h
-          free -h
-          echo "Cleaning up temporary files..."
-          sudo apt-get clean
-          sudo rm -rf /tmp/*
-          
-          # Install dependencies with timeout and memory optimization
+          # Install dependencies
           echo "Installing dependencies..."
-          for i in {1..3}; do
-            echo "Attempt $i of 3..."
-            echo "Starting pnpm install with timeout..."
-            
-            # Set memory limit and timeout
-            timeout 300 pnpm install --frozen-lockfile --prefer-offline --reporter=append-only || INSTALL_EXIT_CODE=$?
-            
-            if [ ${INSTALL_EXIT_CODE:-0} -eq 0 ]; then
-              echo "Dependencies installed successfully"
-              break
-            elif [ ${INSTALL_EXIT_CODE:-0} -eq 124 ]; then
-              echo "Installation timed out after 5 minutes"
-            else
-              echo "Installation failed with exit code: ${INSTALL_EXIT_CODE:-0}"
-            fi
-            
-            if [ $i -eq 3 ]; then
-              echo "All installation attempts failed, trying fallback method..."
-              # Fallback: install without frozen lockfile
-              timeout 300 pnpm install --prefer-offline --reporter=append-only || {
-                echo "Fallback installation also failed"
-                exit 1
-              }
-              break
-            fi
-            
-            echo "Retrying in 10 seconds..."
-            sleep 10
-            unset INSTALL_EXIT_CODE
-          done
+          pnpm install --frozen-lockfile
           
           # Generate Prisma client
           cd packages/prisma
