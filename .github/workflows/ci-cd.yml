@@ -114,13 +114,14 @@ jobs:
         key: ${{ secrets.VM_SSH_KEY }}
         port: ${{ secrets.VM_PORT }}
         script: |
-          # Create backup of current deployment
-          if [ -d "/home/ubuntu/devops-class25.2" ]; then
-            sudo mv /home/ubuntu/devops-class25.2 /home/ubuntu/devops-class25.2.backup.$(date +%Y%m%d_%H%M%S)
-          fi
+          # Stop existing services
+          sudo pkill -f "node.*3000" || true
+          sudo pkill -f "node.*3002" || true
+          sudo pkill -f "node.*8080" || true
           
           # Create new deployment directory
           mkdir -p /home/ubuntu/devops-class25.2
+          cd /home/ubuntu/devops-class25.2
 
     - name: Copy files to VM
       uses: appleboy/scp-action@v0.1.7
