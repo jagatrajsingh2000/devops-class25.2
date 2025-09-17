@@ -11,7 +11,8 @@
       "dependsOn": ["^lint"]
     },
     "check-types": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"]
     },
     "dev": {
       "cache": false,
