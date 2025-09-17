@@ -95,6 +95,9 @@ jobs:
           --exclude='dist' \
           --exclude='.turbo' \
           --exclude='*.log' \
+          --exclude='deployment.tar.gz' \
+          --exclude='.github' \
+          --exclude='*.tsbuildinfo' \
           .
 
     - name: Deploy to VM
