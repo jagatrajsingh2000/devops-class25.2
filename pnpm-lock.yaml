@@ -141,6 +141,9 @@ importers:
       prisma:
         specifier: ^6.16.1
         version: 6.16.1(typescript@5.8.2)
+      typescript:
+        specifier: ^5.8.2
+        version: 5.8.2
 
   packages/typescript-config: {}
 

@@ -38,12 +38,12 @@ Make sure your VM has the following installed:
 # Update system
 sudo apt update && sudo apt upgrade -y
 
-# Install Node.js 18
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+# Install Node.js 20
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
 # Install pnpm
-npm install -g pnpm@9.0.0
+npm install -g pnpm@10.16.1
 
 # Install PM2
 npm install -g pm2

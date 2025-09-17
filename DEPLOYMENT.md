@@ -80,8 +80,8 @@ pnpm quick-health     # Quick health check (run anywhere)
 Your VM should have:
 
 - **OS**: Ubuntu 20.04+ (recommended)
-- **Node.js**: 18.x
-- **pnpm**: 9.0.0
+- **Node.js**: 20.x
+- **pnpm**: 10.16.1
 - **PM2**: For process management
 - **Nginx**: For reverse proxy
 - **SSH access**: For deployment
@@ -92,12 +92,12 @@ Your VM should have:
 # Update system
 sudo apt update && sudo apt upgrade -y
 
-# Install Node.js 18
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+# Install Node.js 20
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
 # Install pnpm
-npm install -g pnpm@9.0.0
+npm install -g pnpm@10.16.1
 
 # Install PM2
 npm install -g pm2

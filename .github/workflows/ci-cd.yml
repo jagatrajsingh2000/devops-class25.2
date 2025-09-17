@@ -7,8 +7,8 @@ on:
     branches: [ main ]
 
 env:
-  NODE_VERSION: '18'
-  PNPM_VERSION: '9.0.0'
+  NODE_VERSION: '20'
+  PNPM_VERSION: '10.16.1'
 
 jobs:
   test:
