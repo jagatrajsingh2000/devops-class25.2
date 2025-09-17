@@ -106,6 +106,21 @@ jobs:
         # Clean up temp directory
         rm -rf deployment-temp
 
+    - name: Test VM Connection
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USERNAME }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        port: ${{ secrets.VM_PORT }}
+        timeout: 60s
+        command_timeout: 30s
+        script: |
+          echo "Testing VM connection..."
+          whoami
+          pwd
+          echo "Connection test successful!"
+
     - name: Deploy to VM
       uses: appleboy/ssh-action@v1.0.3
       with:
@@ -115,9 +130,16 @@ jobs:
         port: ${{ secrets.VM_PORT }}
         timeout: 600s
         command_timeout: 300s
+        debug: true
         script: |
+          # Test connection first
+          echo "Testing SSH connection..."
+          whoami
+          pwd
+          
           # Create new deployment directory
           mkdir -p /home/ubuntu/devops-class25.2
+          echo "Directory created successfully"
 
     - name: Copy files to VM
       uses: appleboy/scp-action@v0.1.7
@@ -126,6 +148,7 @@ jobs:
         username: ${{ secrets.VM_USERNAME }}
         key: ${{ secrets.VM_SSH_KEY }}
         port: ${{ secrets.VM_PORT }}
+        timeout: 600s
         source: "deployment.tar.gz"
         target: "/home/ubuntu/devops-class25.2/"
 
