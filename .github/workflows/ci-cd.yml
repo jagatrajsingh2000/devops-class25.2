@@ -1,0 +1,184 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  NODE_VERSION: '18'
+  PNPM_VERSION: '9.0.0'
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: ${{ env.PNPM_VERSION }}
+
+    - name: Get pnpm store directory
+      shell: bash
+      run: |
+        echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+    - name: Setup pnpm cache
+      uses: actions/cache@v3
+      with:
+        path: ${{ env.STORE_PATH }}
+        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-pnpm-store-
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+
+    - name: Lint code
+      run: pnpm run lint
+
+    - name: Type check
+      run: pnpm run check-types
+
+    - name: Build packages
+      run: pnpm run build
+
+  deploy:
+    name: Deploy to VM
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: ${{ env.PNPM_VERSION }}
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+
+    - name: Build application
+      run: pnpm run build
+
+    - name: Create deployment package
+      run: |
+        tar -czf deployment.tar.gz \
+          --exclude='.git' \
+          --exclude='node_modules' \
+          --exclude='.next' \
+          --exclude='dist' \
+          --exclude='.turbo' \
+          --exclude='*.log' \
+          .
+
+    - name: Deploy to VM
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USERNAME }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        port: ${{ secrets.VM_PORT }}
+        script: |
+          # Create backup of current deployment
+          if [ -d "/home/ubuntu/devops-class25.2" ]; then
+            sudo mv /home/ubuntu/devops-class25.2 /home/ubuntu/devops-class25.2.backup.$(date +%Y%m%d_%H%M%S)
+          fi
+          
+          # Create new deployment directory
+          mkdir -p /home/ubuntu/devops-class25.2
+          cd /home/ubuntu/devops-class25.2
+
+    - name: Copy files to VM
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USERNAME }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        port: ${{ secrets.VM_PORT }}
+        source: "deployment.tar.gz"
+        target: "/home/ubuntu/devops-class25.2/"
+
+    - name: Extract and setup on VM
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USERNAME }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        port: ${{ secrets.VM_PORT }}
+        script: |
+          cd /home/ubuntu/devops-class25.2
+          
+          # Extract deployment package
+          tar -xzf deployment.tar.gz
+          rm deployment.tar.gz
+          
+          # Install dependencies
+          pnpm install --frozen-lockfile
+          
+          # Generate Prisma client
+          cd packages/prisma
+          pnpm prisma generate
+          cd ../..
+          
+          # Run database migrations
+          cd packages/prisma
+          pnpm prisma db push
+          cd ../..
+          
+          # Build application
+          pnpm run build
+          
+          # Stop existing services
+          sudo pkill -f "node.*3000" || true
+          sudo pkill -f "node.*3002" || true
+          sudo pkill -f "node.*8080" || true
+          
+          # Start services with PM2
+          npm install -g pm2
+          pm2 delete all || true
+          
+          # Start HTTP server
+          pm2 start apps/http-server/dist/index.js --name "http-server" -- --port 3002
+          
+          # Start WebSocket server
+          pm2 start apps/ws-server/dist/index.js --name "ws-server" -- --port 8080
+          
+          # Start Web server
+          pm2 start "cd apps/web && npm start" --name "web-server"
+          
+          # Save PM2 configuration
+          pm2 save
+          pm2 startup
+          
+          # Update nginx configuration
+          sudo cp engineex.conf /etc/nginx/sites-available/devops-class25.2
+          sudo ln -sf /etc/nginx/sites-available/devops-class25.2 /etc/nginx/sites-enabled/
+          sudo nginx -t && sudo systemctl reload nginx
+          
+          # Health check
+          sleep 10
+          curl -f http://localhost:3002/hi || exit 1
+          curl -f http://localhost:3000 || exit 1
+          
+          echo "Deployment completed successfully!"
+

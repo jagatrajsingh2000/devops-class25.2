@@ -1,0 +1,124 @@
+name: Manual Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
+      action:
+        description: 'Deployment action'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+        - deploy
+        - rollback
+
+env:
+  NODE_VERSION: '18'
+  PNPM_VERSION: '9.0.0'
+
+jobs:
+  manual-deploy:
+    name: Manual Deploy
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: ${{ env.PNPM_VERSION }}
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+
+    - name: Build application
+      run: pnpm run build
+
+    - name: Create deployment package
+      run: |
+        tar -czf deployment.tar.gz \
+          --exclude='.git' \
+          --exclude='node_modules' \
+          --exclude='.next' \
+          --exclude='dist' \
+          --exclude='.turbo' \
+          --exclude='*.log' \
+          .
+
+    - name: Deploy to VM
+      if: ${{ inputs.action == 'deploy' }}
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USERNAME }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        port: ${{ secrets.VM_PORT }}
+        script: |
+          # Create backup of current deployment
+          if [ -d "/home/ubuntu/devops-class25.2" ]; then
+            sudo mv /home/ubuntu/devops-class25.2 /home/ubuntu/devops-class25.2.backup.$(date +%Y%m%d_%H%M%S)
+          fi
+          
+          # Create new deployment directory
+          mkdir -p /home/ubuntu/devops-class25.2
+          cd /home/ubuntu/devops-class25.2
+
+    - name: Copy files to VM
+      if: ${{ inputs.action == 'deploy' }}
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USERNAME }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        port: ${{ secrets.VM_PORT }}
+        source: "deployment.tar.gz"
+        target: "/home/ubuntu/devops-class25.2/"
+
+    - name: Execute deployment
+      if: ${{ inputs.action == 'deploy' }}
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USERNAME }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        port: ${{ secrets.VM_PORT }}
+        script: |
+          cd /home/ubuntu/devops-class25.2
+          
+          # Extract deployment package
+          tar -xzf deployment.tar.gz
+          rm deployment.tar.gz
+          
+          # Run deployment script
+          chmod +x scripts/deploy.sh
+          ./scripts/deploy.sh
+
+    - name: Execute rollback
+      if: ${{ inputs.action == 'rollback' }}
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USERNAME }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        port: ${{ secrets.VM_PORT }}
+        script: |
+          cd /home/ubuntu/devops-class25.2
+          
+          # Run rollback script
+          chmod +x scripts/rollback.sh
+          ./scripts/rollback.sh
