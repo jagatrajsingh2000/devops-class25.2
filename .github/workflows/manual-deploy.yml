@@ -116,6 +116,12 @@ jobs:
           tar -xzf deployment.tar.gz
           rm deployment.tar.gz
           
+          # Install pnpm if not already installed
+          if ! command -v pnpm &> /dev/null; then
+            echo "Installing pnpm..."
+            npm install -g pnpm@10.16.1
+          fi
+          
           # Run deployment script
           chmod +x scripts/deploy.sh
           ./scripts/deploy.sh

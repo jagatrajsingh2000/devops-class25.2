@@ -32,6 +32,12 @@ if [ ! -f "package.json" ]; then
     exit 1
 fi
 
+# Install pnpm if not already installed
+if ! command -v pnpm &> /dev/null; then
+    print_status "Installing pnpm..."
+    npm install -g pnpm@10.16.1
+fi
+
 # Install/update dependencies
 print_status "Installing dependencies..."
 pnpm install --frozen-lockfile
