@@ -49,7 +49,7 @@ fi
 print_status "Installing dependencies..."
 for i in {1..3}; do
     print_status "Attempt $i of 3..."
-    if pnpm install --frozen-lockfile --prefer-offline --no-audit --no-fund; then
+    if pnpm install --frozen-lockfile --prefer-offline; then
         print_status "Dependencies installed successfully"
         break
     else
